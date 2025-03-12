@@ -65,11 +65,12 @@
         const majorityVotePercent = (majorityVoteCount / votesPanel.children.length) * 100;
         const tieVotes = Object.keys(votes).filter(vote => votes[vote] === majorityVoteCount);
         const isTie = tieVotes.length > 1;
+        const headerWord = majorityVotePercent > 50 ? 'Majority' : 'Plurality';
 
         if (isTie) {
-            return `Majority: ${tieVotes.join(', ')} (${majorityVoteCount} votes each, ${majorityVotePercent.toFixed(0)}%)`;
+            return `${headerWord}: ${tieVotes.join(', ')} (${majorityVoteCount} votes each, ${majorityVotePercent.toFixed(0)}%)`;
         } else {
-            return `Majority: ${majorityVote} (${majorityVoteCount} votes, ${majorityVotePercent.toFixed(0)}%)`;
+            return `${headerWord}: ${majorityVote} (${majorityVoteCount} votes, ${majorityVotePercent.toFixed(0)}%)`;
         }
     }
 
