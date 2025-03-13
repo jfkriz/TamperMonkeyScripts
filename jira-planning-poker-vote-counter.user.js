@@ -6,7 +6,9 @@
 // @author       jim@kriz.net
 // @match        https://jira.kroger.com/jira/browse/*
 // @run-at       document-idle
-// @grant        none
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @grant        GM_notification
 // ==/UserScript==
 
 (function() {
@@ -34,6 +36,8 @@
             updateVoteCount(planningPokerTitle, votesPanel);
         });
         observer.observe(votesPanel, { childList: true, subtree: true, attributes: true, characterData: true });
+
+        autoEnableLiveUpdate();
 
         return true;
     }
@@ -84,5 +88,65 @@
           ).singleNodeValue;
         const votesPanel = document.querySelector('[class*=PlanningPokerWebPanel__DisplayedVotesWrapper]');
         return { planningPokerTitle, votesPanel };
+    }
+
+    function autoEnableLiveUpdate() {
+        const liveUpdateSwitch = document.getElementById('live-updates');
+
+        if (!liveUpdateSwitch) {
+            return false;
+        }
+
+        const isLiveUpdateAlreadyEnabled = liveUpdateSwitch.parentNode.getAttribute("data-checked");
+
+        const autoEnableLiveUpdatesUntilString = GM_getValue("autoEnableLiveUpdatesUntil", null);
+
+        if (!isLiveUpdateAlreadyEnabled && autoEnableLiveUpdatesUntilString) {
+            const autoEnableLiveUpdatesUntilDate = new Date(autoEnableLiveUpdatesUntilString);
+            const now = new Date();
+
+            if (now < autoEnableLiveUpdatesUntilDate) {
+                liveUpdateSwitch.click();
+            }
+        }
+
+        liveUpdateSwitch.addEventListener("click", onLiveUpdateClicked);
+    }
+
+    function onLiveUpdateClicked(event) {
+        const isChecked = event.target.parentNode.getAttribute("data-checked") !== "true"; // opposite of expected because attribute changes after this function runs
+        
+        if (isChecked) {
+            const twoHoursFromNow = addHours(new Date(), 2);
+            GM_setValue("autoEnableLiveUpdatesUntil", twoHoursFromNow.getTime());
+            showLiveUpdateNotification(twoHoursFromNow);
+        } else {
+            GM_setValue("autoEnableLiveUpdatesUntil", null);
+        }
+    }
+
+    function showLiveUpdateNotification(autoEnableLiveUpdatesUntil) {
+        const timesToShowNotification = 5;
+        var timesNotificationShown = GM_getValue("autoUpdateNotificationTimesShown", 0);
+
+        if (timesNotificationShown < timesToShowNotification) {
+            timesNotificationShown++;
+            GM_setValue("autoUpdateNotificationTimesShown", timesNotificationShown);
+            const timesToShowMessage = (timesToShowNotification - timesNotificationShown) > 0 
+                ? `This will only be shown ${timesToShowNotification - timesNotificationShown} more time${ (timesToShowNotification - timesNotificationShown) > 1 ? "s" : "" }.` 
+                : "This will not be shown again.";
+            GM_notification({text: `Live updates will be enabled on all Jira issues until ${autoEnableLiveUpdatesUntil.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}. ${timesToShowMessage}`,
+                         title: "Jira Planning Poker Automatic Live Updates",
+                         silent: true,
+                         timeout: 5000,
+                         image: 'https://jira.kroger.com/jira/s/-u4obiy/9120013/za3vhj/_/images/fav-jsw.png'
+                        });
+        }
+    }
+
+    function addHours(date, hours) {
+        const hoursToAdd = hours * 60 * 60 * 1000;
+        date.setTime(date.getTime() + hoursToAdd);
+        return date;
     }
 })();
