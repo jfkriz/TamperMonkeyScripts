@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jira Planning Poker Vote Counter
 // @namespace    http://www.kriz.net/
-// @version      0.2
+// @version      0.3
 // @description  Add a total votes counter to the planning poker panel.
 // @author       jim@kriz.net
 // @match        https://jira.kroger.com/jira/browse/*
@@ -15,18 +15,31 @@
     'use strict';
     const titleText = 'Easy Agile Planning Poker';
 
-    if (!attachVoteCountListener()) {
-        // Try again after a delay, in case the elements are slow to render (seems like the votes panel is typically delayed a second or two)
-        setTimeout(() => {
-            attachVoteCountListener();
-        }, 2500);
+    const maxAttachAttempts = 10;
+    const delayBetweenAttempts = 1000;
+
+    tryAttachVoteCountListener();
+
+    // Attempt to attach the vote count listener up to maxAttachAttempts times
+    // This hopefully accounts for slowness loading the voting panel
+    function tryAttachVoteCountListener(attempt = 0) {
+        if (attempt >= maxAttachAttempts) {
+            console.warn('Max attempts to attach vote count listener reached');
+            console.warn('Page may not be a jira issue page with a voting panel');
+            return;
+        }
+
+        if (!attachVoteCountListener()) {
+            setTimeout(() => {
+                tryAttachVoteCountListener(attempt + 1);
+            }, delayBetweenAttempts);
+        }
     }
 
     function attachVoteCountListener() {
         const { planningPokerTitle, votesPanel } = getVotingElements();
 
         if (!planningPokerTitle || !votesPanel) {
-            console.warn('Page may not be a jira issue page with a voting panel');
             return false;
         }
 
