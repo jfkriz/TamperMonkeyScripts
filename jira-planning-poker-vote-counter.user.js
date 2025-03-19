@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jira Planning Poker Vote Counter
 // @namespace    http://www.kriz.net/
-// @version      0.3
+// @version      0.4
 // @description  Add a total votes counter to the planning poker panel.
 // @author       jim@kriz.net
 // @match        https://jira.kroger.com/jira/browse/*
