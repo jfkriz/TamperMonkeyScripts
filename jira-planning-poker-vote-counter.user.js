@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jira Planning Poker Vote Counter
 // @namespace    http://www.kriz.net/
-// @version      0.4
+// @version      0.5
 // @description  Add a total votes counter to the planning poker panel.
 // @author       jim@kriz.net
 // @match        https://jira.kroger.com/jira/browse/*
@@ -115,9 +115,11 @@
                 const buttonWrapper = document.createElement('div');
                 buttonWrapper.style.textAlign = 'right'; // Align the button to the right
 
+                const isBug = document.querySelector('#type-val')?.innerText?.trim() === 'Bug';
+
                 button = document.createElement('button');
                 button.id = 'user-script-vote-counter-update-button';
-                button.innerText = 'Update Story Points';
+                button.innerText = isBug ? 'Update Timebox' : 'Update Story Points';
                 button.className = 'css-1l34k60'; // Add the specified class to the button
                 button.style.marginTop = '5px';
                 button.disabled = true; // Initially disable the button
@@ -127,9 +129,13 @@
                         const match = estimateSpan.innerText.match(/Estimate:\s*(\d+)/);
                         if (match) {
                             const storyPointsValue = parseInt(match[1], 10);
-                            event.target.innerText = "Updating Story Points...";
+                            event.target.innerText = isBug ? "Updating Timebox..." : "Updating Story Points...";
                             event.target.disabled = true; // Disable the button to prevent multiple clicks
-                            setPointsOnIssue(storyPointsValue);
+                            if(isBug) {
+                                setTimeBoxOnBug(storyPointsValue);
+                            } else {
+                                setPointsOnIssue(storyPointsValue);
+                            }
                         } else {
                             console.warn('VOTECOUNTER: No valid estimate found in span text');
                         }
@@ -298,6 +304,62 @@
             },
             error: function(xhr, status, error) {
                 console.error('VOTECOUNTER: Failed to update field', status, error);
+            }
+        });
+    }
+
+    function setTimeBoxOnBug(timeBoxDays) {
+        const issueKey = JIRA.Issue.getIssueKey();
+
+        console.log('Current issue key:', issueKey);
+
+        const url = AJS.contextPath() + `/rest/api/2/issue/${issueKey}`;
+
+        // Use AJA.$.Ajax to get the current issue details, then call addTimeboxToDescription
+        AJS.$.ajax({
+            url: url,
+            type: 'GET',
+            contentType: 'application/json',
+            success: function(response) {
+                console.debug('VOTECOUNTER: Retrieved issue successfully', response);
+                // Update the issue, adding the timeBox to the description
+                addTimeboxToDescription(response, timeBoxDays);
+            },
+            error: function(xhr, status, error) {
+                console.error('VOTECOUNTER: Failed to update description field', status, error);
+            }
+        });
+    }
+
+    function addTimeboxToDescription(issue, timeBoxDays) {
+        const issueKey = JIRA.Issue.getIssueKey();
+        const url = AJS.contextPath() + `/rest/api/2/issue/${issueKey}`;
+
+        const timeBox = `*Timebox: ${timeBoxDays} days*\n\n`;
+
+        // Check if the description already contains a timebox
+        const description = issue.fields.description || '';
+        const timeboxRegex = /\*Timebox:\s*\d+\s*days\*\n\n/;
+        const updatedDescription = timeBox + description.replace(timeboxRegex, '');
+
+        const data = {
+            fields: {
+                description: updatedDescription
+            }
+        };
+
+        AJS.$.ajax({
+            url: url,
+            type: 'PUT',
+            contentType: 'application/json',
+            data: JSON.stringify(data),
+            success: function(response) {
+                console.debug('VOTECOUNTER: Description updated successfully', response);
+                // Refresh the issue in the page
+                JIRA.IssueNavigator.reload();
+            },
+            error: function(xhr, status, error) {
+                console.error('VOTECOUNTER: Failed to update description', status, error);
             }
         });
     }
