@@ -335,11 +335,11 @@
         const issueKey = JIRA.Issue.getIssueKey();
         const url = AJS.contextPath() + `/rest/api/2/issue/${issueKey}`;
 
-        const timeBox = `*Timebox: ${timeBoxDays} days*\n\n`;
+        const timeBox = `*Timebox: ${timeBoxDays} day${timeBoxDays > 1 ? "s" : ""}*\n\n`;
 
         // Check if the description already contains a timebox
         const description = issue.fields.description || '';
-        const timeboxRegex = /\*Timebox:\s*\d+\s*days\*\n\n/;
+        const timeboxRegex = /\*Timebox:\s*\d+\s*day(s)?\*(\s)+/i;
         const updatedDescription = timeBox + description.replace(timeboxRegex, '');
 
         const data = {
