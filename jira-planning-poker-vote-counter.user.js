@@ -116,7 +116,7 @@
                 buttonWrapper.style.textAlign = 'right'; // Align the button to the right
 
                 const issueType = document.querySelector('#type-val')?.innerText?.trim()?.toLowerCase();
-                const isTimebox = issueType === 'bug' || issueType == 'spike';
+                const isTimebox = issueType === 'bug' || issueType === 'spike';
 
                 button = document.createElement('button');
                 button.id = 'user-script-vote-counter-update-button';
