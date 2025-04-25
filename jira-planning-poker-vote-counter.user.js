@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Jira Planning Poker Vote Counter
 // @namespace    http://www.kriz.net/
-// @version      0.5
-// @description  Add a total votes counter to the planning poker panel.
+// @version      0.6
+// @description  Add a total votes counter and other features to the planning poker panel.
 // @author       jim@kriz.net
 // @match        https://jira.kroger.com/jira/browse/*
 // @run-at       document-idle
@@ -115,11 +115,12 @@
                 const buttonWrapper = document.createElement('div');
                 buttonWrapper.style.textAlign = 'right'; // Align the button to the right
 
-                const isBug = document.querySelector('#type-val')?.innerText?.trim() === 'Bug';
+                const issueType = document.querySelector('#type-val')?.innerText?.trim()?.toLowerCase();
+                const isTimebox = issueType === 'bug' || issueType == 'spike';
 
                 button = document.createElement('button');
                 button.id = 'user-script-vote-counter-update-button';
-                button.innerText = isBug ? 'Update Timebox' : 'Update Story Points';
+                button.innerText = isTimebox ? 'Update Timebox' : 'Update Story Points';
                 button.className = 'css-1l34k60'; // Add the specified class to the button
                 button.style.marginTop = '5px';
                 button.disabled = true; // Initially disable the button
@@ -129,10 +130,10 @@
                         const match = estimateSpan.innerText.match(/Estimate:\s*(\d+)/);
                         if (match) {
                             const storyPointsValue = parseInt(match[1], 10);
-                            event.target.innerText = isBug ? "Updating Timebox..." : "Updating Story Points...";
+                            event.target.innerText = isTimebox ? "Updating Timebox..." : "Updating Story Points...";
                             event.target.disabled = true; // Disable the button to prevent multiple clicks
-                            if(isBug) {
-                                setTimeBoxOnBug(storyPointsValue);
+                            if(isTimebox) {
+                                setTimeboxOnIssue(storyPointsValue);
                             } else {
                                 setPointsOnIssue(storyPointsValue);
                             }
@@ -308,7 +309,7 @@
         });
     }
 
-    function setTimeBoxOnBug(timeBoxDays) {
+    function setTimeboxOnIssue(timeBoxDays) {
         const issueKey = JIRA.Issue.getIssueKey();
 
         console.log('Current issue key:', issueKey);
