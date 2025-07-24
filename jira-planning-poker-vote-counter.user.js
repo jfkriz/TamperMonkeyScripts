@@ -1,25 +1,37 @@
 // ==UserScript==
 // @name         Jira Planning Poker Vote Counter
 // @namespace    http://www.kriz.net/
-// @version      0.6
+// @version      1.0-RC.1
 // @description  Add a total votes counter and other features to the planning poker panel.
 // @author       jim@kriz.net
-// @match        https://jira.kroger.com/jira/browse/*
+// @match        https://kroger.atlassian.net/browse/*
+// @match        https://eausm-connect.easyagile.zone/planning-poker-view*
 // @run-at       document-idle
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_notification
 // ==/UserScript==
 
+// Test story: https://kroger.atlassian.net/browse/DCPSERV-75026
+// Test spike: https://kroger.atlassian.net/browse/DCPSERV-77231
+
 (function() {
     'use strict';
     const titleText = 'Easy Agile Planning Poker';
-
     const maxAttachAttempts = 5;
     const delayBetweenAttempts = 1000;
     let planningPokerObserverAttached = false;
 
-    tryAttachVoteCountListener();
+    if (location.href.includes('kroger.atlassian.net/browse')) {
+        addIframeEventListener();
+    } else {
+        tryAttachVoteCountListener();
+    }
+
+    function addIframeEventListener() {
+        // Listen for messages from the parent window
+        window.addEventListener('message', handleIframeMessage, false);
+    }
 
     // Attempt to attach the vote count listener up to maxAttachAttempts times
     // This hopefully accounts for slowness loading the voting panel
@@ -40,20 +52,31 @@
     function attachVoteCountListener() {
         const { planningPokerTitle, votesPanel } = getVotingElements();
 
-        if (!planningPokerTitle || !votesPanel) {
+        if (!votesPanel) {
             return false;
         }
 
-        addUpdateStoryPointsButton()
-
-        updateVoteCount(planningPokerTitle, votesPanel);
+        window.addEventListener('message', (event) => {
+            if(event.data.type === 'issueTypeResponse') {
+                const issueType = event.data.issueType;
+                if (issueType) {
+                    console.debug(`VOTECOUNTER: Issue type is ${issueType}`);
+                    if (issueType === 'bug' || issueType === 'spike') {
+                        createUpdateTimeboxLink();
+                    }
+                } else {
+                    console.warn('VOTECOUNTER: No issue type received from parent window');
+                }
+            }
+        }, false);
+        fireGetIssueTypeEvent();
+ 
+        updateVoteCount(votesPanel);
 
         const votesPanelObserver = new MutationObserver(() => {
-            updateVoteCount(planningPokerTitle, votesPanel);
+            updateVoteCount(votesPanel);
         });
         votesPanelObserver.observe(votesPanel, { childList: true, subtree: true, attributes: true, characterData: true });
-
-        autoEnableLiveUpdate();
 
         addMonitorForPlanningPokerReAttached()
 
@@ -85,74 +108,68 @@
 
                 planningPokerObserverAttached = true;
             }
-
-            
         }
     }
 
-    function addUpdateStoryPointsButton() {
-        console.debug("VOTECOUNTER: before adding button");
-
-        let button = document.getElementById('user-script-vote-counter-update-button');
-
-        if (button) {
-            console.debug("VOTECOUNTER: button already exists");
-            return false;
-        }
-
-        const planningPokerView = document.getElementById('planning-poker-view');
-        if (!planningPokerView) {
-            console.warn('VOTECOUNTER: Planning Poker view not found');
-            return false;
-        }
-
-        const votingAreaContainer = document.querySelector('[class^="PlanningPokerWebPanel__VotingArea"]');
-        if (votingAreaContainer)
-        {
-            //const buttonContainer = document.querySelector('[class^="PlanningPokerWebPanel__ButtonContainer"]');
-            console.debug("VOTECOUNTER: planningPokerViewObserver before button add", votingAreaContainer, button);
-            if (!button) {
-                const buttonWrapper = document.createElement('div');
-                buttonWrapper.style.textAlign = 'right'; // Align the button to the right
-
-                const issueType = document.querySelector('#type-val')?.innerText?.trim()?.toLowerCase();
-                const isTimebox = issueType === 'bug' || issueType === 'spike';
-
-                button = document.createElement('button');
-                button.id = 'user-script-vote-counter-update-button';
-                button.innerText = isTimebox ? 'Update Timebox' : 'Update Story Points';
-                button.className = 'css-1l34k60'; // Add the specified class to the button
-                button.style.marginTop = '5px';
-                button.disabled = true; // Initially disable the button
-                button.addEventListener('click', (event) => {
-                    const estimateSpan = document.querySelector('[class^="PlanningPokerWebPanel__ButtonContainer"] > span');
-                    if (estimateSpan) {
-                        const match = estimateSpan.innerText.match(/Estimate:\s*(\d+)/);
-                        if (match) {
-                            const storyPointsValue = parseInt(match[1], 10);
-                            event.target.innerText = isTimebox ? "Updating Timebox..." : "Updating Story Points...";
-                            event.target.disabled = true; // Disable the button to prevent multiple clicks
-                            if(isTimebox) {
-                                setTimeboxOnIssue(storyPointsValue);
-                            } else {
-                                setPointsOnIssue(storyPointsValue);
-                            }
-                        } else {
-                            console.warn('VOTECOUNTER: No valid estimate found in span text');
-                        }
-                    } else {
-                        console.warn('VOTECOUNTER: Span not found in button container when clicking button');
-                    }
-                });
-
-                console.debug("VOTECOUNTER: after adding button");
-
-                buttonWrapper.appendChild(button);
-                votingAreaContainer.parentNode.insertBefore(buttonWrapper, votingAreaContainer.nextSibling);
+    function createUpdateTimeboxLink() {
+        const buttonContainer = document.querySelector('[class^="PlanningPokerWebPanel__ButtonContainer"]');
+        if (buttonContainer) {
+            const timeboxButtonId = 'user-script-vote-counter-update-button';
+            const storyPointsButton = buttonContainer.querySelector('[class*="ButtonWithPermissions__ButtonStyles"]');
+            if (storyPointsButton && storyPointsButton.innerText.includes('Story Points')) {
+                swapStoryPointsButtonWithTimeboxButton(storyPointsButton, timeboxButtonId, buttonContainer);
             }
-        } else {
-            console.warn('VOTECOUNTER: Span not found in button container when trying to add observer');
+
+            // Add a mutation observer on the buttonContainer to look for a button with a class like ButtonWithPermissions__ButtonStyles,
+            // and if it appears, hide it and instead add a button that updates the timebox
+            const buttonObserver = new MutationObserver((mutations) => {
+                mutations.forEach((mutation) => {
+                    mutation.addedNodes.forEach((node) => {
+                        if (node.nodeType === Node.ELEMENT_NODE && node.className.includes('ButtonWithPermissions__ButtonStyles') && node.innerText.includes('Story Points')) {
+                            console.debug("VOTECOUNTER: found button with class ButtonWithPermissions__ButtonStyles, hiding it");
+                            swapStoryPointsButtonWithTimeboxButton(node, timeboxButtonId, buttonContainer);
+                        }
+                    });
+                    mutation.removedNodes.forEach((node) => {
+                        if (node.nodeType === Node.ELEMENT_NODE && node.className.includes('ButtonWithPermissions__ButtonStyles') && node.innerText.includes('Story Points')) {
+                            // If the actual EasyAgile button was removed, remove ours too
+                            const existingButton = document.getElementById(timeboxButtonId);
+                            if (existingButton) {
+                                existingButton.remove(); // Remove the old button if it exists
+                            }
+                        }
+                    });
+                });
+            });
+            buttonObserver.observe(buttonContainer, { childList: true, subtree: true });
         }
+    }
+
+    function swapStoryPointsButtonWithTimeboxButton(storyPointsButton, timeboxButtonId, buttonContainer) {
+        // Copy the node to a new button that updates the timebox
+        const newButton = storyPointsButton.cloneNode(true);
+        newButton.id = timeboxButtonId;
+        newButton.innerText = 'Update Timebox on Issue';
+
+        storyPointsButton.style.display = 'none'; // Hide the original button
+        
+        newButton.addEventListener('click', (event) => {
+            const estimateSpan = document.querySelector('[class^="PlanningPokerWebPanel__ButtonContainer"] > span');
+            if (estimateSpan) {
+                const match = estimateSpan.innerText.match(/Estimate:\s*(\d+)/);
+                if (match) {
+                    const timeBoxValue = parseInt(match[1], 10);
+                    event.target.innerText = "Updating Timebox...";
+                    event.target.disabled = true; // Disable the button to prevent multiple clicks
+                    fireUpdateTimeboxEvent(timeBoxValue);
+                } else {
+                    console.warn('VOTECOUNTER: No valid estimate found in span text');
+                }
+            } else {
+                console.warn('VOTECOUNTER: Span not found in button container when clicking button');
+            }
+        });
+        buttonContainer.insertBefore(newButton, storyPointsButton);
     }
 
     function setUpdateButtonIsEnabled() {
@@ -169,11 +186,51 @@
         
     }
 
-    function updateVoteCount(planningPokerTitle, votesPanel) {
+    function handleIframeMessage(event) {
+        if (event.data.type === 'updateVoteCount') {
+            const { planningPokerTitle, _ } = getVotingElements();
+            planningPokerTitle.innerText = `${titleText} - ${event.data.voteCount}`;
+        } else if (event.data.type === 'getIssueType') {
+            const issueType = document.querySelector('[data-testid="issue.views.issue-base.foundation.change-issue-type.button"] > span > img')?.alt?.trim()?.toLowerCase();
+            event.source.postMessage({
+                type: 'issueTypeResponse',
+                issueType: issueType
+            }, event.origin);
+        } else if(event.data.type === 'updateTimebox') {
+            const timeBoxDays = event.data.timeBoxDays;
+            if (timeBoxDays && !isNaN(timeBoxDays)) {
+                setTimeboxOnIssue(timeBoxDays);
+            } else {
+                console.warn('VOTECOUNTER: Invalid timebox days received:', timeBoxDays);
+            }
+        }
+    }
+
+    function updateVoteCount(votesPanel) {
         const totalVotes = votesPanel.children?.length || 0;
         const majorityVote = getMajorityVote(votesPanel);
-        planningPokerTitle.innerText = `${titleText} - Votes: ${totalVotes}${majorityVote ? ' - ' + majorityVote : ''}`;
+        fireUpdateVoteCountEvent(`Votes: ${totalVotes}${majorityVote ? ' - ' + majorityVote : ''}`);
         setUpdateButtonIsEnabled();
+    }
+
+    function fireUpdateVoteCountEvent(voteCountText) {
+        window.parent.postMessage({
+            type: 'updateVoteCount',
+            voteCount: voteCountText
+        }, '*');
+    }
+
+    function fireGetIssueTypeEvent() {
+        window.parent.postMessage({
+            type: 'getIssueType'
+        }, '*');
+    }
+
+    function fireUpdateTimeboxEvent(timeBoxDays) {
+        window.parent.postMessage({
+            type: 'updateTimebox',
+            timeBoxDays: timeBoxDays
+        }, '*');
     }
 
     function getMajorityVote(votesPanel) {
@@ -218,99 +275,8 @@
         return { planningPokerTitle, votesPanel };
     }
 
-    function autoEnableLiveUpdate() {
-        const liveUpdateSwitch = document.getElementById('live-updates');
-
-        if (!liveUpdateSwitch) {
-            return false;
-        }
-
-        const isLiveUpdateAlreadyEnabled = liveUpdateSwitch.parentNode.getAttribute("data-checked");
-
-        const autoEnableLiveUpdatesUntilString = GM_getValue("autoEnableLiveUpdatesUntil", null);
-
-        if (!isLiveUpdateAlreadyEnabled && autoEnableLiveUpdatesUntilString) {
-            const autoEnableLiveUpdatesUntilDate = new Date(autoEnableLiveUpdatesUntilString);
-            const now = new Date();
-
-            if (now < autoEnableLiveUpdatesUntilDate) {
-                liveUpdateSwitch.click();
-            }
-        }
-
-        liveUpdateSwitch.addEventListener("click", onLiveUpdateClicked);
-    }
-
-    function onLiveUpdateClicked(event) {
-        const isChecked = event.target.parentNode.getAttribute("data-checked") !== "true"; // opposite of expected because attribute changes after this function runs
-
-        if (isChecked) {
-            const twoHoursFromNow = addHours(new Date(), 2);
-            GM_setValue("autoEnableLiveUpdatesUntil", twoHoursFromNow.getTime());
-            showLiveUpdateNotification(twoHoursFromNow);
-        } else {
-            GM_setValue("autoEnableLiveUpdatesUntil", null);
-        }
-    }
-
-    function showLiveUpdateNotification(autoEnableLiveUpdatesUntil) {
-        const timesToShowNotification = 5;
-        let timesNotificationShown = GM_getValue("autoUpdateNotificationTimesShown", 0);
-
-        if (timesNotificationShown < timesToShowNotification) {
-            timesNotificationShown++;
-            GM_setValue("autoUpdateNotificationTimesShown", timesNotificationShown);
-            const timesToShowMessage = (timesToShowNotification - timesNotificationShown) > 0
-                ? `This will only be shown ${timesToShowNotification - timesNotificationShown} more time${ (timesToShowNotification - timesNotificationShown) > 1 ? "s" : "" }.`
-                : "This will not be shown again.";
-            GM_notification({text: `Live updates will be enabled on all Jira issues until ${autoEnableLiveUpdatesUntil.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}. ${timesToShowMessage}`,
-                         title: "Jira Planning Poker Automatic Live Updates",
-                         silent: true,
-                         timeout: 5000,
-                         image: 'https://jira.kroger.com/jira/s/-u4obiy/9120013/za3vhj/_/images/fav-jsw.png'
-                        });
-        }
-    }
-
-    function addHours(date, hours) {
-        const hoursToAdd = hours * 60 * 60 * 1000;
-        date.setTime(date.getTime() + hoursToAdd);
-        return date;
-    }
-
-    function setPointsOnIssue(storyPointsValue) {
-        // Get the issue key of the current Jira issue
-        const issueKey = JIRA.Issue.getIssueKey();
-
-        console.log('Current issue key:', issueKey);
-
-        const fieldName = 'customfield_11601'; // Story Points field
-
-        const url = AJS.contextPath() + `/rest/api/2/issue/${issueKey}`;
-        const data = {
-            fields: {
-                [fieldName]: storyPointsValue
-            }
-        };
-
-        AJS.$.ajax({
-            url: url,
-            type: 'PUT',
-            contentType: 'application/json',
-            data: JSON.stringify(data),
-            success: function(response) {
-                console.debug('VOTECOUNTER: Field updated successfully', response);
-                // Refresh the issue in the page
-                JIRA.IssueNavigator.reload();
-            },
-            error: function(xhr, status, error) {
-                console.error('VOTECOUNTER: Failed to update field', status, error);
-            }
-        });
-    }
-
     function setTimeboxOnIssue(timeBoxDays) {
-        const issueKey = JIRA.Issue.getIssueKey();
+        const issueKey = window.location.href.match(/(browse|issue)\/([A-Z]{2,}-\d+)/)[2];
 
         console.log('Current issue key:', issueKey);
 
@@ -333,8 +299,7 @@
     }
 
     function addTimeboxToDescription(issue, timeBoxDays) {
-        const issueKey = JIRA.Issue.getIssueKey();
-        const url = AJS.contextPath() + `/rest/api/2/issue/${issueKey}`;
+        const url = AJS.contextPath() + `/rest/api/2/issue/${issue.key}`;
 
         const timeBox = `*Timebox: ${timeBoxDays} day${timeBoxDays > 1 ? "s" : ""}*\n\n`;
 
@@ -364,6 +329,4 @@
             }
         });
     }
-
-
 })();
