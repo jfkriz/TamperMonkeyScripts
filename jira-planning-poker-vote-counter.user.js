@@ -7,9 +7,6 @@
 // @match        https://kroger.atlassian.net/browse/*
 // @match        https://eausm-connect.easyagile.zone/planning-poker-view*
 // @run-at       document-idle
-// @grant        GM_setValue
-// @grant        GM_getValue
-// @grant        GM_notification
 // ==/UserScript==
 
 // Test story: https://kroger.atlassian.net/browse/DCPSERV-75026
@@ -50,7 +47,7 @@
     }
 
     function attachVoteCountListener() {
-        const { planningPokerTitle, votesPanel } = getVotingElements();
+        const { _, votesPanel } = getVotingElements();
 
         if (!votesPanel) {
             return false;
@@ -58,6 +55,7 @@
 
         window.addEventListener('message', (event) => {
             if(event.data.type === 'issueTypeResponse') {
+                console.debug(`VOTECOUNTER: Voting IFrame Received issueTypeResponse with data: ${JSON.stringify(event.data)}`);
                 const issueType = event.data.issueType;
                 if (issueType) {
                     console.debug(`VOTECOUNTER: Issue type is ${issueType}`);
@@ -188,15 +186,18 @@
 
     function handleIframeMessage(event) {
         if (event.data.type === 'updateVoteCount') {
+            console.debug(`VOTECOUNTER: Received updateVoteCount message with data: ${JSON.stringify(event.data)}`);
             const { planningPokerTitle, _ } = getVotingElements();
             planningPokerTitle.innerText = `${titleText} - ${event.data.voteCount}`;
         } else if (event.data.type === 'getIssueType') {
-            const issueType = document.querySelector('[data-testid="issue.views.issue-base.foundation.change-issue-type.button"] > span > img')?.alt?.trim()?.toLowerCase();
+            console.debug('VOTECOUNTER: Received getIssueType message, fetching issue type');
+            const issueType = document.querySelector('div[data-testid="issue.views.issue-base.foundation.breadcrumbs.breadcrumb-current-issue-container"] img')?.alt?.trim()?.toLowerCase();
             event.source.postMessage({
                 type: 'issueTypeResponse',
                 issueType: issueType
             }, event.origin);
         } else if(event.data.type === 'updateTimebox') {
+            console.debug(`VOTECOUNTER: Received updateTimebox message with data: ${JSON.stringify(event.data)}`);
             const timeBoxDays = event.data.timeBoxDays;
             if (timeBoxDays && !isNaN(timeBoxDays)) {
                 setTimeboxOnIssue(timeBoxDays);
