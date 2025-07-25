@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         Jira Planning Poker Vote Counter
 // @namespace    http://www.kriz.net/
-// @version      1.0-RC.1
+// @version      1.0
 // @description  Add a total votes counter and other features to the planning poker panel.
 // @author       jim@kriz.net
 // @match        https://kroger.atlassian.net/browse/*
+// @match        https://kroger.atlassian.net/jira/*selectedIssue=*
 // @match        https://eausm-connect.easyagile.zone/planning-poker-view*
 // @run-at       document-idle
 // ==/UserScript==
@@ -19,15 +20,42 @@
     const delayBetweenAttempts = 1000;
     let planningPokerObserverAttached = false;
 
-    if (location.href.includes('kroger.atlassian.net/browse')) {
-        addIframeEventListener();
-    } else {
+    // If we are on the voting panel page, we need to attach the vote count listener directly to 
+    // the voting panel. If we are on the main page for an issue, we just need to attach some
+    // listeners to the page, so we can handle events that are fired from the iframe.
+    //
+    // This works for both the single issue browse view, and the "pop-up" view from the
+    // issue navigator.
+    if (location.href.includes('eausm-connect.easyagile.zone/planning-poker-view')) {
         tryAttachVoteCountListener();
+    } else {
+        addIframeEventListener();
     }
 
     function addIframeEventListener() {
-        // Listen for messages from the parent window
-        window.addEventListener('message', handleIframeMessage, false);
+        // Add listener to the main page to handle messages from the iframe
+        window.addEventListener('message', (event) => {
+            if (event.data.type === 'updateVoteCount') {
+                console.debug(`VOTECOUNTER: Received updateVoteCount message with data: ${JSON.stringify(event.data)}`);
+                const { planningPokerTitle, _ } = getVotingElements();
+                planningPokerTitle.innerText = `${titleText} - ${event.data.voteCount}`;
+            } else if (event.data.type === 'getIssueType') {
+                console.debug('VOTECOUNTER: Received getIssueType message, fetching issue type');
+                const issueType = document.querySelector('div[data-testid="issue.views.issue-base.foundation.breadcrumbs.breadcrumb-current-issue-container"] img')?.alt?.trim()?.toLowerCase();
+                event.source.postMessage({
+                    type: 'issueTypeResponse',
+                    issueType: issueType
+                }, event.origin);
+            } else if(event.data.type === 'updateTimebox') {
+                console.debug(`VOTECOUNTER: Received updateTimebox message with data: ${JSON.stringify(event.data)}`);
+                const timeBoxDays = event.data.timeBoxDays;
+                if (timeBoxDays && !isNaN(timeBoxDays)) {
+                    setTimeboxOnIssue(timeBoxDays);
+                } else {
+                    console.warn('VOTECOUNTER: Invalid timebox days received:', timeBoxDays);
+                }
+            }            
+        }, false);
     }
 
     // Attempt to attach the vote count listener up to maxAttachAttempts times
@@ -60,7 +88,7 @@
                 if (issueType) {
                     console.debug(`VOTECOUNTER: Issue type is ${issueType}`);
                     if (issueType === 'bug' || issueType === 'spike') {
-                        createUpdateTimeboxLink();
+                        tryCreateUpdateTimeboxLink();
                     }
                 } else {
                     console.warn('VOTECOUNTER: No issue type received from parent window');
@@ -76,42 +104,47 @@
         });
         votesPanelObserver.observe(votesPanel, { childList: true, subtree: true, attributes: true, characterData: true });
 
-        addMonitorForPlanningPokerReAttached()
+        // With this being an iframe now, and with the user script triggering on the iframe page as well,
+        // I don't think we need this anymore. If we do need it, it will need refactoring, because the elements
+        // it looks for have changed, and the structure is a little different now.
+        //addMonitorForPlanningPokerReAttached()
 
         return true;
     }
 
     // Monitor for the planning poker view to be re-attached to the issue content
-    function addMonitorForPlanningPokerReAttached() {
-        if (!planningPokerObserverAttached) {
-            const issueContent = document.getElementById('issue-content');
+    // function addMonitorForPlanningPokerReAttached() {
+    //     if (!planningPokerObserverAttached) {
+    //         const issueContent = document.getElementById('issue-content');
 
-            if (issueContent) {
-                // Monitor for planningPokerView removal and re-addition
-                const issueContentObserver = new MutationObserver((mutations) => {
-                    mutations.forEach((mutation) => {
-                        mutation.addedNodes.forEach((node) => {
-                            if (node.id === 'eausm-planning-poker-issue-view-web-panel') {
-                                console.debug('VOTECOUNTER: eausm-planning-poker-issue-view-web-panel added');
-                                if (!document.getElementById('user-script-vote-counter-update-button')) {
-                                    tryAttachVoteCountListener();
-                                }
-                            }
-                        });
-                    });
-                });
+    //         if (issueContent) {
+    //             // Monitor for planningPokerView removal and re-addition
+    //             const issueContentObserver = new MutationObserver((mutations) => {
+    //                 mutations.forEach((mutation) => {
+    //                     mutation.addedNodes.forEach((node) => {
+    //                         if (node.id === 'eausm-planning-poker-issue-view-web-panel') {
+    //                             console.debug('VOTECOUNTER: eausm-planning-poker-issue-view-web-panel added');
+    //                             if (!document.getElementById('user-script-vote-counter-update-button')) {
+    //                                 tryAttachVoteCountListener();
+    //                             }
+    //                         }
+    //                     });
+    //                 });
+    //             });
 
-                // watch for voting panel to be re-loaded:
-                issueContentObserver.observe(issueContent, { childList: true, subtree: true });
+    //             // watch for voting panel to be re-loaded:
+    //             issueContentObserver.observe(issueContent, { childList: true, subtree: true });
 
-                planningPokerObserverAttached = true;
-            }
-        }
-    }
+    //             planningPokerObserverAttached = true;
+    //         }
+    //     }
+    // }
 
     function createUpdateTimeboxLink() {
-        const buttonContainer = document.querySelector('[class^="PlanningPokerWebPanel__ButtonContainer"]');
+        console.debug('VOTECOUNTER: Creating Update Timebox button');
+        const buttonContainer = document.querySelector('[class*="PlanningPokerWebPanel__ButtonContainer"]');
         if (buttonContainer) {
+            console.debug('VOTECOUNTER: Button container found, adding Update Timebox button');
             const timeboxButtonId = 'user-script-vote-counter-update-button';
             const storyPointsButton = buttonContainer.querySelector('[class*="ButtonWithPermissions__ButtonStyles"]');
             if (storyPointsButton && storyPointsButton.innerText.includes('Story Points')) {
@@ -140,6 +173,9 @@
                 });
             });
             buttonObserver.observe(buttonContainer, { childList: true, subtree: true });
+            return true;
+        } else {
+            return false;
         }
     }
 
@@ -182,29 +218,6 @@
             }
         }
         
-    }
-
-    function handleIframeMessage(event) {
-        if (event.data.type === 'updateVoteCount') {
-            console.debug(`VOTECOUNTER: Received updateVoteCount message with data: ${JSON.stringify(event.data)}`);
-            const { planningPokerTitle, _ } = getVotingElements();
-            planningPokerTitle.innerText = `${titleText} - ${event.data.voteCount}`;
-        } else if (event.data.type === 'getIssueType') {
-            console.debug('VOTECOUNTER: Received getIssueType message, fetching issue type');
-            const issueType = document.querySelector('div[data-testid="issue.views.issue-base.foundation.breadcrumbs.breadcrumb-current-issue-container"] img')?.alt?.trim()?.toLowerCase();
-            event.source.postMessage({
-                type: 'issueTypeResponse',
-                issueType: issueType
-            }, event.origin);
-        } else if(event.data.type === 'updateTimebox') {
-            console.debug(`VOTECOUNTER: Received updateTimebox message with data: ${JSON.stringify(event.data)}`);
-            const timeBoxDays = event.data.timeBoxDays;
-            if (timeBoxDays && !isNaN(timeBoxDays)) {
-                setTimeboxOnIssue(timeBoxDays);
-            } else {
-                console.warn('VOTECOUNTER: Invalid timebox days received:', timeBoxDays);
-            }
-        }
     }
 
     function updateVoteCount(votesPanel) {
@@ -277,7 +290,8 @@
     }
 
     function setTimeboxOnIssue(timeBoxDays) {
-        const issueKey = window.location.href.match(/(browse|issue)\/([A-Z]{2,}-\d+)/)[2];
+        const issueKeyMatch = window.location.href.match(/(?:browse|issue)\/([A-Z]+-\d+)|selectedIssue=([A-Z]+-\d+)/);
+        const issueKey = issueKeyMatch[1] || issueKeyMatch[2];
 
         console.log('Current issue key:', issueKey);
 
