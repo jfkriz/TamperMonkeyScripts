@@ -140,6 +140,20 @@
     //     }
     // }
 
+    function tryCreateUpdateTimeboxLink(attempt = 0) {
+        if (attempt >= maxAttachAttempts) {
+            console.warn('VOTECOUNTER: Max attempts to create timebox link reached');
+            console.warn('VOTECOUNTER: Maybe cannot locate the voting panel, or the Easy Agile Planning Poker panel is not loaded.');
+            return;
+        }
+
+        if (!createUpdateTimeboxLink()) {
+            setTimeout(() => {
+                tryCreateUpdateTimeboxLink(attempt + 1);
+            }, delayBetweenAttempts);
+        }
+    }
+
     function createUpdateTimeboxLink() {
         console.debug('VOTECOUNTER: Creating Update Timebox button');
         const buttonContainer = document.querySelector('[class*="PlanningPokerWebPanel__ButtonContainer"]');
