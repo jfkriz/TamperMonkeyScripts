@@ -35,18 +35,23 @@
     function addIframeEventListener() {
         // Add listener to the main page to handle messages from the iframe
         window.addEventListener('message', (event) => {
-            if (event.data.type === 'updateVoteCount') {
+            // Ignore all events except those from the EasyAgile Planning Poker iframe
+            if (event.origin !== 'https://eausm-connect.easyagile.zone') {
+                return;
+            }
+
+            if (event.data.type === 'VOTECOUNTER-updateVoteCount') {
                 console.debug(`VOTECOUNTER: Received updateVoteCount message with data: ${JSON.stringify(event.data)}`);
                 const { planningPokerTitle, _ } = getVotingElements();
                 planningPokerTitle.innerText = `${titleText} - ${event.data.voteCount}`;
-            } else if (event.data.type === 'getIssueType') {
+            } else if (event.data.type === 'VOTECOUNTER-getIssueType') {
                 console.debug('VOTECOUNTER: Received getIssueType message, fetching issue type');
                 const issueType = document.querySelector('div[data-testid="issue.views.issue-base.foundation.breadcrumbs.breadcrumb-current-issue-container"] img')?.alt?.trim()?.toLowerCase();
                 event.source.postMessage({
-                    type: 'issueTypeResponse',
+                    type: 'VOTECOUNTER-issueTypeResponse',
                     issueType: issueType
                 }, event.origin);
-            } else if(event.data.type === 'updateTimebox') {
+            } else if(event.data.type === 'VOTECOUNTER-updateTimebox') {
                 console.debug(`VOTECOUNTER: Received updateTimebox message with data: ${JSON.stringify(event.data)}`);
                 const timeBoxDays = event.data.timeBoxDays;
                 if (timeBoxDays && !isNaN(timeBoxDays)) {
@@ -82,7 +87,12 @@
         }
 
         window.addEventListener('message', (event) => {
-            if(event.data.type === 'issueTypeResponse') {
+            // Ignore all events except those from the Kroger Atlassian Cloud instance
+            if (event.origin !== 'https://kroger.atlassian.net') {
+                return; // Ignore messages from other origins
+            }
+
+            if(event.data.type === 'VOTECOUNTER-issueTypeResponse') {
                 console.debug(`VOTECOUNTER: Voting IFrame Received issueTypeResponse with data: ${JSON.stringify(event.data)}`);
                 const issueType = event.data.issueType;
                 if (issueType) {
@@ -96,7 +106,7 @@
             }
         }, false);
         fireGetIssueTypeEvent();
- 
+
         updateVoteCount(votesPanel);
 
         const votesPanelObserver = new MutationObserver(() => {
@@ -200,7 +210,7 @@
         newButton.innerText = 'Update Timebox on Issue';
 
         storyPointsButton.style.display = 'none'; // Hide the original button
-        
+
         newButton.addEventListener('click', (event) => {
             const estimateSpan = document.querySelector('[class^="PlanningPokerWebPanel__ButtonContainer"] > span');
             if (estimateSpan) {
@@ -231,7 +241,6 @@
                 updateButton.disabled = true; // Disable the button if the span does not contain "Estimate: <number>"
             }
         }
-        
     }
 
     function updateVoteCount(votesPanel) {
@@ -243,20 +252,20 @@
 
     function fireUpdateVoteCountEvent(voteCountText) {
         window.parent.postMessage({
-            type: 'updateVoteCount',
+            type: 'VOTECOUNTER-updateVoteCount',
             voteCount: voteCountText
         }, '*');
     }
 
     function fireGetIssueTypeEvent() {
         window.parent.postMessage({
-            type: 'getIssueType'
+            type: 'VOTECOUNTER-getIssueType'
         }, '*');
     }
 
     function fireUpdateTimeboxEvent(timeBoxDays) {
         window.parent.postMessage({
-            type: 'updateTimebox',
+            type: 'VOTECOUNTER-updateTimebox',
             timeBoxDays: timeBoxDays
         }, '*');
     }
