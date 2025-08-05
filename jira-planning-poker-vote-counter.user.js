@@ -19,6 +19,8 @@
     const maxAttachAttempts = 5;
     const delayBetweenAttempts = 1000;
     let planningPokerObserverAttached = false;
+    const easyAgileIframeOrigin = 'https://eausm-connect.easyagile.zone';
+    const jiraInstanceOrigin = 'https://kroger.atlassian.net';
 
     // If we are on the voting panel page, we need to attach the vote count listener directly to 
     // the voting panel. If we are on the main page for an issue, we just need to attach some
@@ -26,7 +28,7 @@
     //
     // This works for both the single issue browse view, and the "pop-up" view from the
     // issue navigator.
-    if (location.href.includes('eausm-connect.easyagile.zone/planning-poker-view')) {
+    if (location.href.includes(`${easyAgileIframeOrigin}/planning-poker-view`)) {
         tryAttachVoteCountListener();
     } else {
         addIframeEventListener();
@@ -36,7 +38,7 @@
         // Add listener to the main page to handle messages from the iframe
         window.addEventListener('message', (event) => {
             // Ignore all events except those from the EasyAgile Planning Poker iframe
-            if (event.origin !== 'https://eausm-connect.easyagile.zone') {
+            if (event.origin !== easyAgileIframeOrigin) {
                 return;
             }
 
@@ -88,7 +90,7 @@
 
         window.addEventListener('message', (event) => {
             // Ignore all events except those from the Kroger Atlassian Cloud instance
-            if (event.origin !== 'https://kroger.atlassian.net') {
+            if (event.origin !== jiraInstanceOrigin) {
                 return; // Ignore messages from other origins
             }
 
@@ -254,20 +256,20 @@
         window.parent.postMessage({
             type: 'VOTECOUNTER-updateVoteCount',
             voteCount: voteCountText
-        }, '*');
+        }, jiraInstanceOrigin);
     }
 
     function fireGetIssueTypeEvent() {
         window.parent.postMessage({
             type: 'VOTECOUNTER-getIssueType'
-        }, '*');
+        }, jiraInstanceOrigin);
     }
 
     function fireUpdateTimeboxEvent(timeBoxDays) {
         window.parent.postMessage({
             type: 'VOTECOUNTER-updateTimebox',
             timeBoxDays: timeBoxDays
-        }, '*');
+        }, jiraInstanceOrigin);
     }
 
     function getMajorityVote(votesPanel) {
